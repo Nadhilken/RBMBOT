@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>RoboMiracle Chatbot</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h2>RoboMiracle Assistant</h2>
+        </div>
+        <div class="chat-box" id="chat-box">
+            <div class="message bot-message">{{ welcome_message }}</div>
+        </div>
+        
+        <!-- Custom message input -->
+        <div class="message-input-container" id="message-input-container" style="display: none;">
+            <input type="text" id="user-message-input" placeholder="Type your message here..." autocomplete="off">
+            <button id="send-message-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+            </button>
+        </div>
+        
+        <div class="options">
+            {% for option in options %}
+                <button class="option-btn" onclick="selectOption('{{ option }}')">{{ option }}</button>
+            {% endfor %}
+        </div>
+        <div class="form-area" id="form-area" style="display: none;">
+            <h3 id="form-title"></h3>
+            <form id="dynamic-form">
+                <input type="text" name="name" placeholder="Your Name" required>
+                <input type="email" name="email" placeholder="Your Email" required>
+                <input type="tel" name="phone" placeholder="Your Contact Number" required>
+                <input type="hidden" name="robot_name" id="robot-name-field">
+                <input type="hidden" name="robot_type" id="robot-type-field">
+                <input type="date" name="date" placeholder="Preferred Expo Date" id="date-field">
+                <div class="form-buttons">
+                    <button type="submit" id="form-submit">Submit</button>
+                    <button type="button" id="form-cancel" class="cancel-btn" onclick="cancelForm()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script>
+        let currentIntent = "inquiry";
+        let currentRobotType = "";
+        let currentRobotName = "";
+        let lastMessage = "";
+        let isRequestPending = false;
+        
+        // Add welcome animation
+        document.addEventListener('DOMContentLoaded', function() {
+            const chatBox = document.getElementById("chat-box");
+            const welcomeMessage = chatBox.querySelector(".bot-message");
+            const options = document.querySelector(".options");
+            
+            // Initial state
+            welcomeMessage.style.opacity = '0';
+            welcomeMessage.style.transform = 'translateY(20px)';
+            options.style.opacity = '0';
+            options.style.transform = 'translateY(20px)';
+            
+            // Animate welcome message
+            setTimeout(() => {
+                welcomeMessage.style.transition = 'all 0.5s ease';
+                welcomeMessage.style.opacity = '1';
+                welcomeMessage.style.transform = 'translateY(0)';
+            }, 300);
+            
+            // Animate options
+            setTimeout(() => {
+                options.style.transition = 'all 0.5s ease';
+                options.style.opacity = '1';
+                options.style.transform = 'translateY(0)';
+            }, 800);
+        });
+
+        // Preload images
+        const imageUrls = [
+            "https://robomiracle.com/wp-content/uploads/2024/06/humanoid-medical-robot-nursing-robot-500x500-4.webp",
+            "https://robomiracle.com/wp-content/uploads/2024/06/DSC_5317__1_-removebg-preview-e1717401701793.png",
+            "https://robomiracle.com/wp-content/uploads/2024/05/Mobile-reception-robot.jpg",
+            "https://robomiracle.com/wp-content/uploads/2024/06/Rbm_foodrover-768x768.png",
+            "https://robomiracle.com/wp-content/uploads/2024/10/unitree-go2-voice-ai-large-model-machine-dog-go2-500x500-1.webp",
+            "https://robomiracle.com/wp-content/uploads/2024/10/Screenshot-2024-08-28-181722.webp",
+            "https://robomiracle.com/wp-content/uploads/2024/10/Screenshot-2024-08-28-181830.webp",
+            "https://robomiracle.com/wp-content/uploads/2023/11/ROBERT0-768x768.jpg",
+            "https://m.media-amazon.com/images/I/71g2b3yW4xL._AC_SL1500_.jpg",
+            "https://robomiracle.com/wp-content/uploads/2024/06/download.avif",
+            "https://robomiracle.com/wp-content/uploads/2024/06/61TMNWWQYkL._AC_UF10001000_QL80_.jpg",
+            "https://robomiracle.com/wp-content/uploads/2024/06/63ec97a3da947a5fda5c5183-vector-2-0-ai-robot-companion-smart.jpg",
+            "https://www.robotshop.com/cdn/shop/products/vector-2-0-ai-robot-companion-1.jpg",
+            "https://via.placeholder.com/300x300.png?text=Robot+Image"
+        ];
+        function preloadImages(urls) {
+            urls.forEach(url => {
+                const img = new Image();
+                img.src = url + '?t=' + new Date().getTime();
+                img.onerror = () => console.warn(`Preload failed for ${url}`);
+            });
+        }
+        preloadImages(imageUrls);
+
+        // Suggestions for alternate robots
+        const SUGGESTIONS = {
+            "Humanoid": {
+                "Intelligent Humanoid Robot - Front Office": "Nila Humanoid Robot",
+                "Nila Humanoid Robot": "Mobile Reception Robot",
+                "Mobile Reception Robot": "Robomiracle Dinebot",
+                "Robomiracle Dinebot": "Intelligent Humanoid Robot - Front Office"
+            },
+            "Quadruped": {
+                "Unitree Go2 EDU": "Unitree Go2 Pro",
+                "Unitree Go2 Pro": "Unitree Go2 Air",
+                "Unitree Go2 Air": "Unitree Go2 EDU"
+            },
+            "Toy": {
+                "Robert Dancing Robot": "Plastic Emo AI Robot",
+                "Plastic Emo AI Robot": "Loona Premium Robot",
+                "Loona Premium Robot": "Loona Go Robot",
+                "Loona Go Robot": "Vector 2.0 AI Robot",
+                "Vector 2.0 AI Robot": "Robert Dancing Robot"
+            }
+        };
+
+        function selectOption(option) {
+            if (["Buy a Robot", "Book an Expo", "Learn More"].includes(option)) {
+                currentIntent = option.toLowerCase().includes("buy") ? "buy" :
+                               option.toLowerCase().includes("expo") ? "expo" : "inquiry";
+                currentRobotType = "";
+                currentRobotName = "";
+                
+                // Show custom message input for "Learn More" option
+                if (option === "Learn More") {
+                    document.getElementById("message-input-container").style.display = "flex";
+                } else {
+                    document.getElementById("message-input-container").style.display = "none";
+                }
+            } else if (["Humanoid", "Quadruped", "Toy"].includes(option)) {
+                currentRobotType = option;
+                currentRobotName = "";
+            } else if (option.startsWith("Show another robot: ")) {
+                currentRobotName = option.replace("Show another robot: ", "");
+            } else if (option === "Buy this robot") {
+                // Keep selected robot
+            } else {
+                currentRobotName = option;
+            }
+            sendMessage(option);
+        }
+
+        function cancelForm() {
+            const formArea = document.getElementById("form-area");
+            const form = document.getElementById("dynamic-form");
+            const chatBox = document.getElementById("chat-box");
+
+            formArea.style.display = "none";
+            form.reset();
+
+            const lastBotMessage = chatBox.querySelector(".bot-message:last-of-type");
+            const lastSuggestions = chatBox.querySelector(".suggestions:last-of-type");
+            if (lastBotMessage) lastBotMessage.remove();
+            if (lastSuggestions) lastSuggestions.remove();
+
+            let newMessage = "";
+            let newSuggestions = [];
+            if (currentIntent === "buy" && currentRobotType && currentRobotName) {
+                newMessage = "Order canceled. Would you like to view another robot?";
+                const alternateRobot = SUGGESTIONS[currentRobotType]?.[currentRobotName] || "";
+                newSuggestions = alternateRobot ? ["Buy this robot", `Show another robot: ${alternateRobot}`] : ["Buy this robot"];
+            } else if (currentIntent === "expo") {
+                newMessage = "Expo booking canceled. How can I assist you further?";
+                newSuggestions = ["Buy a Robot", "Book an Expo"];
+            } else {
+                newMessage = "Action canceled. How can I assist you further?";
+                newSuggestions = ["Buy a Robot", "Book an Expo"];
+            }
+
+            chatBox.innerHTML += `<div class="message bot-message">${newMessage}</div>`;
+            if (newSuggestions.length > 0) {
+                chatBox.innerHTML += `<div class="suggestions">${newSuggestions.map(s => `<button onclick="selectOption('${s}')">${s}</button>`).join("")}</div>`;
+            }
+
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function loadImageWithRetry(img, src, fallbackUrls, defaultFallback, retries = 5) {
+            const urlsToTry = [src, ...fallbackUrls, defaultFallback];
+            let currentIndex = 0;
+
+            function tryLoad() {
+                if (currentIndex >= urlsToTry.length) {
+                    img.src = defaultFallback;
+                    img.classList.remove("loading");
+                    console.log(`All attempts failed. Switched to default fallback: ${defaultFallback}`);
+                    return;
+                }
+
+                const currentUrl = urlsToTry[currentIndex] + '?t=' + new Date().getTime();
+                img.src = currentUrl;
+                img.classList.add("loading");
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                img.onerror = (e) => {
+                    clearTimeout(timeoutId);
+                    console.error(`Failed to load image: ${currentUrl}, retries left: ${retries}, error: ${e.message || 'Unknown error'}`);
+                    if (retries > 0) {
+                        setTimeout(() => loadImageWithRetry(img, currentUrl, [], defaultFallback, retries - 1), 2000);
+                    } else {
+                        currentIndex++;
+                        retries = 5;
+                        tryLoad();
+                    }
+                };
+
+                img.onload = () => {
+                    clearTimeout(timeoutId);
+                    img.classList.remove("loading");
+                    console.log(`Image loaded successfully: ${currentUrl}`);
+                };
+
+                img.fetchPriority = "high";
+            }
+
+            tryLoad();
+        }
+
+        function sendMessage(message) {
+            if (!message || message === lastMessage || isRequestPending) return;
+            isRequestPending = true;
+            lastMessage = message;
+            const chatBox = document.getElementById("chat-box");
+            
+            // Add user message with animation
+            const userMessageDiv = document.createElement('div');
+            userMessageDiv.className = 'message user-message';
+            userMessageDiv.innerHTML = message;
+            userMessageDiv.style.opacity = '0';
+            userMessageDiv.style.transform = 'translateY(20px)';
+            chatBox.appendChild(userMessageDiv);
+            
+            // Trigger animation
+            setTimeout(() => {
+                userMessageDiv.style.transition = 'all 0.3s ease';
+                userMessageDiv.style.opacity = '1';
+                userMessageDiv.style.transform = 'translateY(0)';
+            }, 10);
+            
+            // Add typing indicator
+            const typingIndicator = document.createElement('div');
+            typingIndicator.className = 'message bot-message typing';
+            typingIndicator.innerHTML = '';
+            typingIndicator.style.opacity = '0';
+            chatBox.appendChild(typingIndicator);
+            
+            setTimeout(() => {
+                typingIndicator.style.transition = 'opacity 0.3s ease';
+                typingIndicator.style.opacity = '1';
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }, 300);
+            
+            chatBox.classList.add("loading");
+            fetch("/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: `user_input=${encodeURIComponent(message)}&intent=${currentIntent}&robot_type=${currentRobotType}&robot_name=${currentRobotName}`
+            })
+            .then(response => {
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                return response.json();
+            })
+            .then(data => {
+                chatBox.classList.remove("loading");
+                if (!data.message) throw new Error("Empty response from server");
+                
+                // Remove typing indicator
+                const typingIndicator = chatBox.querySelector('.bot-message.typing');
+                if (typingIndicator) {
+                    typingIndicator.remove();
+                }
+                
+                // Add bot message with animation
+                const botMessageDiv = document.createElement('div');
+                botMessageDiv.className = 'message bot-message';
+                botMessageDiv.innerHTML = data.message;
+                botMessageDiv.style.opacity = '0';
+                botMessageDiv.style.transform = 'translateY(20px)';
+                chatBox.appendChild(botMessageDiv);
+                
+                // Trigger animation
+                setTimeout(() => {
+                    botMessageDiv.style.transition = 'all 0.3s ease';
+                    botMessageDiv.style.opacity = '1';
+                    botMessageDiv.style.transform = 'translateY(0)';
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }, 10);
+                
+                if (data.robot_details) {
+                    // Add robot details with animation
+                    setTimeout(() => {
+                        const uniqueId = `robot-img-${Date.now()}`;
+                        const robotDetailsDiv = document.createElement('div');
+                        robotDetailsDiv.className = 'robot-details';
+                        robotDetailsDiv.innerHTML = `
+                            <h3>${data.robot_details.name}</h3>
+                            <img class="robot-image loading ${uniqueId}" alt="${data.robot_details.name}" 
+                                 style="max-width: 100%;">
+                            <p>Price: ₹${data.robot_details.price}</p>
+                        `;
+                        robotDetailsDiv.style.opacity = '0';
+                        robotDetailsDiv.style.transform = 'scale(0.95)';
+                        chatBox.appendChild(robotDetailsDiv);
+                        
+                        // Trigger animation
+                        setTimeout(() => {
+                            robotDetailsDiv.style.transition = 'all 0.5s ease';
+                            robotDetailsDiv.style.opacity = '1';
+                            robotDetailsDiv.style.transform = 'scale(1)';
+                            chatBox.scrollTop = chatBox.scrollHeight;
+                        }, 10);
+                        
+                        const img = chatBox.querySelector(`.${uniqueId}`);
+                        if (img) {
+                            loadImageWithRetry(img, data.robot_details.image_url, data.robot_details.fallback_image_urls, data.robot_details.fallback_image_url);
+                        } else {
+                            console.error("Image element not found for", data.robot_details.name);
+                            const errorDiv = document.createElement('div');
+                            errorDiv.className = 'message bot-message';
+                            errorDiv.innerHTML = `Sorry, unable to load image for ${data.robot_details.name}. Please try again.`;
+                            chatBox.appendChild(errorDiv);
+                        }
+                    }, 500);
+                }
+                
+                if (data.suggestions && data.suggestions.length > 0) {
+                    // Add suggestions with animation
+                    setTimeout(() => {
+                        const suggestionsDiv = document.createElement('div');
+                        suggestionsDiv.className = 'suggestions';
+                        suggestionsDiv.innerHTML = data.suggestions.map(s => `<button onclick="selectOption('${s}')">${s}</button>`).join("");
+                        suggestionsDiv.style.opacity = '0';
+                        suggestionsDiv.style.transform = 'translateY(20px)';
+                        chatBox.appendChild(suggestionsDiv);
+                        
+                        // Trigger animation
+                        setTimeout(() => {
+                            suggestionsDiv.style.transition = 'all 0.5s ease';
+                            suggestionsDiv.style.opacity = '1';
+                            suggestionsDiv.style.transform = 'translateY(0)';
+                            chatBox.scrollTop = chatBox.scrollHeight;
+                        }, 10);
+                    }, 800);
+                }
+                if (data.message.includes("Please provide")) {
+                    document.getElementById("form-title").innerText = currentIntent === "expo" ? "Expo Booking Form" : 
+                                                                     currentIntent === "buy" ? "Order Form" : "Inquiry Form";
+                    document.getElementById("date-field").style.display = currentIntent === "expo" ? "block" : "none";
+                    document.getElementById("form-area").style.display = "block";
+                    if (currentIntent === "buy") {
+                        document.getElementById("robot-name-field").value = currentRobotName;
+                        document.getElementById("robot-type-field").value = currentRobotType;
+                    }
+                }
+                chatBox.scrollTop = chatBox.scrollHeight;
+                isRequestPending = false;
+            })
+            .catch(error => {
+                isRequestPending = false;
+                chatBox.classList.remove("loading");
+                console.error("Error in sendMessage:", error);
+                
+                // Remove typing indicator
+                const typingIndicator = chatBox.querySelector('.bot-message.typing');
+                if (typingIndicator) {
+                    typingIndicator.remove();
+                }
+                
+                // Add error message with animation
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'message bot-message';
+                errorDiv.innerHTML = 'Sorry, something went wrong. Please try again.';
+                errorDiv.style.opacity = '0';
+                errorDiv.style.transform = 'translateY(20px)';
+                chatBox.appendChild(errorDiv);
+                
+                // Trigger animation
+                setTimeout(() => {
+                    errorDiv.style.transition = 'all 0.3s ease';
+                    errorDiv.style.opacity = '1';
+                    errorDiv.style.transform = 'translateY(0)';
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }, 10);
+            });
+        }
+
+        // Custom message input event listeners
+        document.getElementById("user-message-input").addEventListener("keypress", function(e) {
+            if (e.key === "Enter" && !isRequestPending && this.value.trim() !== "") {
+                sendMessage(this.value.trim());
+                this.value = "";
+            }
+        });
+        
+        document.getElementById("send-message-btn").addEventListener("click", function() {
+            const input = document.getElementById("user-message-input");
+            if (!isRequestPending && input.value.trim() !== "") {
+                sendMessage(input.value.trim());
+                input.value = "";
+            }
+        });
+        
+        document.getElementById("dynamic-form").addEventListener("submit", function(e) {
+            e.preventDefault();
+            if (isRequestPending) return;
+            isRequestPending = true;
+            const formData = new FormData(this);
+            const endpoint = currentIntent === "expo" ? "/submit_expo" : 
+                            currentIntent === "buy" ? "/submit_order" : "/submit_inquiry";
+            const chatBox = document.getElementById("chat-box");
+            
+            document.getElementById("form-area").style.display = "none";
+            this.reset();
+            
+            chatBox.classList.add("loading");
+            chatBox.innerHTML += `<div class="message bot-message">Placing your order...</div>`;
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            fetch(endpoint, {
+                method: "POST",
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                return response.json();
+            })
+            .then(data => {
+                chatBox.classList.remove("loading");
+                chatBox.innerHTML += `<div class="message bot-message">${data.message}</div>`;
+                chatBox.scrollTop = chatBox.scrollHeight;
+                lastMessage = "";
+                isRequestPending = false;
+            })
+            .catch(error => {
+                isRequestPending = false;
+                chatBox.classList.remove("loading");
+                console.error("Error in form submission:", error);
+                chatBox.innerHTML += `<div class="message bot-message">Sorry, something went wrong. Please try again.</div>`;
+                chatBox.scrollTop = chatBox.scrollHeight;
+            });
+        });
+    </script>
+</body>
+</html>
